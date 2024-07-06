@@ -15,10 +15,7 @@ where
     hash
 }
 
-pub struct HashMap<K, V>
-where
-    K: Hash + Eq,
-{
+pub struct HashMap<K, V> {
     elements: Box<[Option<(K, V)>]>,
     size: usize,
     capacity: usize,
@@ -26,7 +23,7 @@ where
 
 impl<K, V> HashMap<K, V>
 where
-    K: Hash + Eq,
+    K: Hash + Eq + PartialEq,
 {
     pub fn new() -> Self {
         // Build an empty elements vector
@@ -91,24 +88,14 @@ where
     where
         K: Hash + Eq,
     {
-        let hash = hash_key(key);
-
-        // Get the relevant tuple from the hash
-        let elements_len = self.elements.len();
-        let hashed_index = (hash as usize) % elements_len;
-
-        // Get the element at the hashed index, and see if there's a collision
-        self.elements[hashed_index]
-            .as_ref()
-            .map(|(existing_key, _)| existing_key == key)
-            .unwrap_or(false)
+        return self.get(key).map(|_| true).unwrap_or(false);
     }
 
     pub fn get(&self, key: &K) -> Option<&V> {
         let hash = hash_key(key);
 
         // Get the relevant tuple from the hash
-        let elements_len = self.elements.len();
+        let elements_len = self.capacity;
 
         let mut hashed_index = (hash as usize) % elements_len;
         let mut num_iterations = 0;
@@ -117,9 +104,13 @@ where
         while num_iterations < self.capacity {
             match self.elements[hashed_index].as_ref() {
                 Some((existing_key, value)) => {
-                    if key == existing_key {
+                    if *key == *existing_key {
                         return Some(value);
                     } else {
+                        println!(
+                            "Hash collision {} {} {}",
+                            num_iterations, hashed_index, hash
+                        );
                         num_iterations += 1;
                         hashed_index += 1;
                         hashed_index %= elements_len;
@@ -137,9 +128,45 @@ where
         panic!("Couldn't find element or empty slot after iterating through all possible slots")
     }
 
+    pub fn remove(&mut self, key: &K) -> Option<V> {
+        let hash = hash_key(key);
+
+        // Get the relevant tuple from the hash
+        let elements_len = self.capacity;
+        let mut hashed_index = (hash as usize) % elements_len;
+        let mut num_iterations = 0;
+
+        // Get the element at the hashed index, and see if there's a collision
+        while num_iterations < self.capacity {
+            let cur_el = self.elements[hashed_index].as_ref();
+            match cur_el {
+                Some((existing_key, _)) => {
+                    if *existing_key == *key {
+                        // This is the right index, take the element out of the option and return
+                        return self.elements[hashed_index].take().map(|(_, v)| v);
+                    } else {
+                        num_iterations += 1;
+                        hashed_index += 1;
+                        hashed_index %= elements_len;
+                        continue;
+                    }
+                }
+                None => {
+                    // The element was not in the map
+                    return None;
+                }
+            }
+        }
+
+        // If iterated through the whole list, and the element was either not found or an empty slot was not found, something went seriously wrong
+        // `resize_if_needed` which is called at the outset of this function, doubles the size of the array if it is at 70% (the LOAD_FACTOR) fullness. An empty slot *should* exist, so we should never get here.
+        panic!("Couldn't find element or empty slot after iterating through all possible slots")
+    }
+
     fn resize_if_needed(&mut self) {
         let new_size = self.size + 1;
         if (new_size as f64) > (self.capacity as f64) * LOAD_FACTOR {
+            println!("Resizing {}", new_size);
             self.resize_underlying_table()
         }
     }
@@ -151,12 +178,15 @@ where
         for _ in 0..new_capacity {
             elements_vec.push(Option::None);
         }
-        let elements_len = new_capacity;
 
         for item in self.elements.iter_mut() {
             item.take().map(|(key, value)| {
                 let hash = hash_key(&key);
-                let hashed_index = (hash as usize) % elements_len;
+                let mut hashed_index = (hash as usize) % new_capacity;
+                while elements_vec[hashed_index].is_some() {
+                    hashed_index += 1;
+                    hashed_index %= new_capacity;
+                }
                 elements_vec[hashed_index] = Some((key, value));
             });
         }
@@ -209,5 +239,22 @@ mod tests {
 
         assert_eq!(test_map.size, 1000);
         assert_eq!(test_map.capacity, 2560);
+        assert!(test_map.contains_key(&3));
+        assert!(test_map.contains_key(&63));
+        assert!(test_map.contains_key(&33));
+        assert!(test_map.contains_key(&300));
+    }
+
+    #[test]
+    fn test_deletes() {
+        let mut test_map: HashMap<i64, i64> = HashMap::new();
+
+        for i in 0..10 {
+            test_map.insert(3 * i, i * 8 + 5);
+        }
+
+        assert_eq!(test_map.get(&9), Some(&29));
+        assert_eq!(test_map.remove(&9), Some(29));
+        assert_eq!(test_map.get(&9), None);
     }
 }
