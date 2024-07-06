@@ -23,7 +23,7 @@ pub struct HashMap<K, V> {
 
 impl<K, V> HashMap<K, V>
 where
-    K: Hash + Eq + PartialEq,
+    K: Hash + Eq,
 {
     pub fn new() -> Self {
         // Build an empty elements vector
@@ -70,6 +70,9 @@ where
                         // There's an existing value here that we are overriting and returning
                         return Some(existing_value);
                     } else {
+                        // Reset the value back in place (we took it above)
+                        self.elements[hashed_index] = Some((existing_key, existing_value));
+
                         num_iterations += 1;
                         hashed_index += 1;
                         hashed_index %= elements_len;
@@ -249,7 +252,7 @@ mod tests {
     fn test_deletes() {
         let mut test_map: HashMap<i64, i64> = HashMap::new();
 
-        for i in 0..10 {
+        for i in 0..50 {
             test_map.insert(3 * i, i * 8 + 5);
         }
 
